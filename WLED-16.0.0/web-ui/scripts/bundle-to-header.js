@@ -20,6 +20,11 @@ if (!fs.existsSync(SRC)) {
 const raw = fs.readFileSync(SRC);
 const gz = gzipSync(raw, { level: 9 });
 const kb = (n) => (n / 1024).toFixed(1);
+let bundleHash = 2166136261;
+for (const byte of gz) {
+  bundleHash ^= byte;
+  bundleHash = Math.imul(bundleHash, 16777619) >>> 0;
+}
 
 console.log(`[bundle-to-header] raw=${kb(raw.length)} KB · gzip=${kb(gz.length)} KB · target<=80 KB`);
 if (gz.length > 80 * 1024) {
@@ -44,6 +49,7 @@ const header = [
   '#include <stddef.h>',
   '#include <stdint.h>',
   '',
+  `const uint32_t web_ui_bundle_hash = 0x${bundleHash.toString(16).padStart(8, '0')};`,
   `const size_t  web_ui_bundle_len = ${gz.length};`,
   'const uint8_t web_ui_bundle[] PROGMEM = {',
   rows.join(',\n'),

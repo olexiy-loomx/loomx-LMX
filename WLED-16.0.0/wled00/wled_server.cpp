@@ -4,6 +4,7 @@
   #include "ota_update.h"  
 #endif
 #include "html_ui.h"
+#include "web_ui_bundle.h"
 #include "html_settings.h"
 #include "html_other.h"
 #include "js_iro.h"
@@ -64,6 +65,7 @@ static constexpr uint8_t LOOMX_ACTION_QUEUE_MAX = 8;
 static constexpr uint16_t LOOMX_ACTION_UDP_PORT = 42717;
 static constexpr uint16_t LOOMX_ACTION_TCP_PORT = 42718;
 static constexpr uint16_t LOOMX_ACTION_MQTT_PORT = 1883;
+static const char LOOMX_BUILD_STAMP[] PROGMEM = __DATE__ " " __TIME__;
 
 //Is this an IP?
 static bool isIp(const String &str) {
@@ -158,9 +160,13 @@ static void handleStaticContent(AsyncWebServerRequest *request, const String &pa
 }
 
 static void serveLoomxIndex(AsyncWebServerRequest *request) {
-  AsyncWebServerResponse *response = request->beginResponse_P(200, FPSTR(CONTENT_TYPE_HTML), PAGE_index, PAGE_index_length);
+  AsyncWebServerResponse *response = request->beginResponse_P(200, FPSTR(CONTENT_TYPE_HTML), web_ui_bundle, web_ui_bundle_len);
   response->addHeader(FPSTR(s_content_enc), F("gzip"));
-  response->addHeader(FPSTR(s_cache_control), F("no-store,max-age=0"));
+  response->addHeader(FPSTR(s_cache_control), F("no-store,no-cache,must-revalidate,max-age=0"));
+  response->addHeader(F("Pragma"), F("no-cache"));
+  response->addHeader(FPSTR(s_expires), F("0"));
+  response->addHeader(F("X-Loomx-Firmware"), versionString);
+  response->addHeader(F("X-Loomx-Web-Hash"), String(web_ui_bundle_hash, HEX));
   request->send(response);
 }
 
@@ -357,7 +363,12 @@ static bool captivePortal(AsyncWebServerRequest *request)
   if (!isIp(hostH) && hostH.indexOf(F("wled.me")) < 0 && hostH.indexOf(cmDNS) < 0 && hostH.indexOf(':') < 0) {
     DEBUG_PRINTLN(F("Captive portal"));
     AsyncWebServerResponse *response = request->beginResponse(302);
-    response->addHeader(F("Location"), F("http://4.3.2.1"));
+    String location = F("http://4.3.2.1/?ui=");
+    location += String(web_ui_bundle_hash, HEX);
+    response->addHeader(F("Location"), location);
+    response->addHeader(FPSTR(s_cache_control), F("no-store,no-cache,must-revalidate,max-age=0"));
+    response->addHeader(F("Pragma"), F("no-cache"));
+    response->addHeader(FPSTR(s_expires), F("0"));
     request->send(response);
     return true;
   }
@@ -1683,6 +1694,7 @@ struct LoomxChildOtaState {
 };
 
 struct LoomxOtaReceiveContext {
+  bool prepared = false;
   bool started = false;
   bool complete = false;
   String error;
@@ -1889,6 +1901,97 @@ static bool getRunningFirmwareImage(const esp_partition_t*& partition, size_t& i
   return true;
 }
 
+static bool getLoomxChildSystemInfo(const IPAddress& ip, String& body, String& error)
+{
+  WiFiClient client;
+  HTTPClient http;
+  http.setTimeout(1200);
+  if (!http.begin(client, String(F("http://")) + ip.toString() + F("/api/system/info"))) {
+    error = F("verify_connect_failed");
+    return false;
+  }
+
+  const int code = http.GET();
+  body = code > 0 ? http.getString() : "";
+  http.end();
+
+  if (code >= 200 && code < 300) return true;
+  error = code > 0 ? String(F("verify_http_")) + code : http.errorToString(code);
+  return false;
+}
+
+static bool loomxFirmwareVersionMatches(const String& reported, const char* expected)
+{
+  if (!expected || !strlen(expected)) return true;
+  if (reported == expected) return true;
+  return reported == String(F("v")) + expected;
+}
+
+static bool parseLoomxChildSystemInfo(const String& body, String& firmware, String& build, uint32_t& webHash)
+{
+  DynamicJsonDocument doc(768);
+  if (deserializeJson(doc, body)) return false;
+  firmware = doc["firmware"] | "";
+  build = doc["build"] | "";
+  webHash = doc["web_hash"] | 0;
+  return true;
+}
+
+static bool waitForLoomxChildFirmware(const IPAddress& ip, String& error)
+{
+  const String expectedBuild = FPSTR(LOOMX_BUILD_STAMP);
+  const uint32_t expectedWebHash = web_ui_bundle_hash;
+  const uint32_t deadline = millis() + 75000UL;
+  String lastFirmware;
+  String lastBuild;
+  uint32_t lastWebHash = 0;
+  bool sawJson = false;
+
+  delay(1200);
+  while ((int32_t)(millis() - deadline) < 0) {
+    String body;
+    String requestError;
+    if (getLoomxChildSystemInfo(ip, body, requestError)) {
+      String firmware;
+      String build;
+      uint32_t webHash = 0;
+      if (parseLoomxChildSystemInfo(body, firmware, build, webHash)) {
+        sawJson = true;
+        lastFirmware = firmware;
+        lastBuild = build;
+        lastWebHash = webHash;
+        if (loomxFirmwareVersionMatches(firmware, versionString) &&
+            build == expectedBuild &&
+            webHash == expectedWebHash) {
+          return true;
+        }
+      } else if (body.indexOf(F("<html")) >= 0 || body.indexOf(F("<!DOCTYPE")) >= 0) {
+        error = F("verify_returned_html");
+      }
+    } else {
+      error = requestError;
+    }
+    delay(1500);
+  }
+
+  if (sawJson) {
+    error = F("verify_mismatch_");
+    if (lastFirmware.length()) error += lastFirmware;
+    else error += F("no_version");
+    if (lastBuild.length()) {
+      error += F("_build_");
+      error += lastBuild;
+    }
+    if (lastWebHash) {
+      error += F("_web_");
+      error += String(lastWebHash, HEX);
+    }
+  } else if (!error.length()) {
+    error = F("verify_timeout");
+  }
+  return false;
+}
+
 static bool sendFirmwareToChildViaWledUpdate(const IPAddress& ip, const esp_partition_t* partition, size_t imageSize, String& error)
 {
   const String boundary = F("----LoomxFirmwareClone");
@@ -1932,6 +2035,10 @@ static bool sendFirmwareToChildViaLoomxOta(const IPAddress& ip, const esp_partit
   if (code >= 200 && code < 300) {
     DynamicJsonDocument response(256);
     if (!deserializeJson(response, body) && (response["ok"] | false)) return true;
+    if (body.indexOf(F("<html")) >= 0 || body.indexOf(F("<!DOCTYPE")) >= 0) {
+      error = F("loomx_ota_unavailable");
+      return false;
+    }
     error = F("loomx_ota_unexpected_response");
     return false;
   }
@@ -1998,7 +2105,13 @@ static void loomxChildOtaTask(void*)
     strlcpy(loomxChildOtaState.current, child.ip.toString().c_str(), sizeof(loomxChildOtaState.current));
     error = "";
     if (sendFirmwareToChild(child.ip, partition, imageSize, error)) {
-      loomxChildOtaState.succeeded++;
+      error = "";
+      if (waitForLoomxChildFirmware(child.ip, error)) {
+        loomxChildOtaState.succeeded++;
+      } else {
+        loomxChildOtaState.failed++;
+        strlcpy(loomxChildOtaState.error, error.c_str(), sizeof(loomxChildOtaState.error));
+      }
     } else {
       loomxChildOtaState.failed++;
       strlcpy(loomxChildOtaState.error, error.c_str(), sizeof(loomxChildOtaState.error));
@@ -2039,13 +2152,15 @@ static void failLoomxOtaReceive(LoomxOtaReceiveContext* context, const String& e
 {
   if (!context || context->error.length()) return;
   context->error = error;
-  if (context->started && !context->complete) {
-    Update.abort();
+  if (context->prepared && !context->complete) {
+    if (context->started) Update.abort();
     strip.resume();
     UsermodManager::onUpdateBegin(false);
     #if WLED_WATCHDOG_TIMEOUT > 0
     WLED::instance().enableWatchdog();
     #endif
+    context->prepared = false;
+    context->started = false;
   }
 }
 
@@ -2053,8 +2168,8 @@ static void cleanupLoomxOtaReceive(AsyncWebServerRequest* request, bool abortUpd
 {
   LoomxOtaReceiveContext* context = reinterpret_cast<LoomxOtaReceiveContext*>(request->_tempObject);
   request->_tempObject = nullptr;
-  if (abortUpdate && context && context->started && !context->complete) {
-    Update.abort();
+  if (abortUpdate && context && context->prepared && !context->complete) {
+    if (context->started) Update.abort();
     strip.resume();
     UsermodManager::onUpdateBegin(false);
     #if WLED_WATCHDOG_TIMEOUT > 0
@@ -2243,6 +2358,10 @@ static void createLoomxApiHandlers()
     payload += versionString;
     payload += F("\",\"vid\":");
     payload += String(VERSION);
+    payload += F(",\"build\":");
+    appendLoomxJsonString(payload, FPSTR(LOOMX_BUILD_STAMP));
+    payload += F(",\"web_hash\":");
+    payload += String(web_ui_bundle_hash);
     payload += F(",\"uptime\":\"");
     payload += String(millis() / 1000 + rolloverMillis * 4294967);
     payload += F("s\",\"free_heap\":\"");
@@ -2487,6 +2606,7 @@ static void createLoomxApiHandlers()
       UsermodManager::onUpdateBegin(true);
       strip.suspend();
       strip.resetSegments();
+      context->prepared = true;
       if (!Update.begin(total)) {
         failLoomxOtaReceive(context, Update.errorString());
         return;

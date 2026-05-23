@@ -482,12 +482,11 @@
         <div class="color-head">
           <span>Color</span>
           <label class="color-input">
-            <span class="color-chip" style={`background-color: ${color}`} aria-hidden="true"></span>
+            <span class="color-chip" style:background-color={color} aria-hidden="true"></span>
             <input
               type="color"
-              value={color}
+              bind:value={color}
               aria-label="Preset color"
-              on:input={updateBaseColor}
               on:change={updateBaseColor}
             />
             <span>{color}</span>
@@ -528,7 +527,7 @@
                 <small>B {childLookState(child.id).brightnessPercent}% · S {childLookState(child.id).speedPercent}% · F {childLookState(child.id).frequencyPercent}%</small>
               </div>
               <label class="mini-color">
-                <span class="mini-chip" style={`background-color: ${childLookState(child.id).color}`} aria-hidden="true"></span>
+                <span class="mini-chip" style:background-color={childLookState(child.id).color} aria-hidden="true"></span>
                 <input
                   type="color"
                   value={childLookState(child.id).color}

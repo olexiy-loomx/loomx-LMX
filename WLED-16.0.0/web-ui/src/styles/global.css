@@ -1,0 +1,100 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+body {
+  min-width: 320px;
+}
+
+#app {
+  min-height: 100vh;
+  background: var(--bg-base);
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  min-height: 44px;
+  border-radius: var(--radius-button);
+  border: 0.5px solid var(--border-default);
+  background: transparent;
+  color: var(--text-primary);
+  transition: all var(--t-fast) var(--ease-out);
+}
+
+button:focus-visible, a:focus-visible, select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+input, select, textarea {
+  background: var(--bg-surface-2);
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-input);
+  color: var(--text-primary);
+  padding: 0 14px;
+  height: 44px;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+select {
+  appearance: none;
+  padding-right: 36px;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.page-shell {
+  width: min(100%, 760px);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 24px;
+  background: var(--bg-base);
+}
+
+@media (min-width: 768px) {
+  .page-shell {
+    padding: 32px;
+  }
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.empty {
+  margin: 0;
+  padding: 18px;
+  border: 0.5px solid var(--border-default);
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

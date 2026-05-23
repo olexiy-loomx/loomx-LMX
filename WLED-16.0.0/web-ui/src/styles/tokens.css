@@ -1,0 +1,51 @@
+:root {
+  /* Backgrounds */
+  --bg-base:      #000000;
+  --bg-surface:   #0A0A0A;
+  --bg-surface-2: #1A1A1A;
+
+  /* Borders */
+  --border-default: #2A2A2A;
+  --border-strong:  #3A3A3A;
+  --border-active:  #C6F542;
+
+  /* Text */
+  --text-primary:   #FFFFFF;
+  --text-secondary: #888888;
+  --text-tertiary:  #444444;
+
+  /* Brand */
+  --accent:       #C6F542;
+  --accent-ink:   #000000;
+  --accent-hover: #D8FA60;
+
+  /* Semantic */
+  --success: #5DCAA5;
+  --warning: #EF9F27;
+  --danger:  #F09595;
+
+  /* Radii */
+  --radius-input:  12px;
+  --radius-button: 14px;
+  --radius-card:   16px;
+  --radius-pill:   999px;
+
+  /* Typography */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Spacing */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-7: 32px;
+  --sp-8: 48px;
+
+  /* Motion */
+  --t-fast: 150ms;
+  --t-base: 200ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+}
